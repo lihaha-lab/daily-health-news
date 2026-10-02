@@ -9,6 +9,8 @@ from condenseit.digest.format import build_digest_markdown
 from condenseit.providers.base import (
     ArticleSummary,
     SummarizerProvider,
+    build_chat_system_prompt,
+    build_chat_user_prompt,
     parse_summary_response,
     resolve_digest_language,
 )
@@ -22,33 +24,23 @@ def _build_summary_prompt(
     max_key_takeaways: int = 5,
     max_summary_paragraphs: int = 5,
     language: str = "English",
+    audience: str = "general readers",
+    editorial_guidance: list[str] | None = None,
 ) -> str:
     """Build the per-article summarization prompt with configurable output size.
 
     ``language`` is a human-readable language name such as ``"English"`` or
     ``"French"``.
     """
-    takeaway_placeholders = ", ".join(
-        f'"<takeaway {i + 1}>"' for i in range(max_key_takeaways)
+    system = build_chat_system_prompt(language, audience, editorial_guidance)
+    user = build_chat_user_prompt(
+        title,
+        content,
+        max_key_takeaways,
+        max_summary_paragraphs,
+        language,
     )
-    para_word = "paragraph" if max_summary_paragraphs == 1 else "paragraphs"
-
-    return (
-        "Analyze this article and respond ONLY with a JSON object — no markdown, "
-        f"no code fences, no extra text. All values must be written in {language}.\n\n"
-        "Use exactly this structure:\n"
-        f"{{\n"
-        f'  "tldr": "<one sentence in {language}: what happened and why it matters>",\n'
-        f'  "key_takeaways": [{takeaway_placeholders}],\n'
-        f'  "summary": "<detailed summary in {language}, {max_summary_paragraphs} {para_word}>",\n'  # noqa: E501
-        f'  "topics": ["<topic-1>", "<topic-2>", "<topic-3>"],\n'
-        f'  "entities": ["<person-org-product-1>", "<entity-2>"],\n'
-        f'  "novelty": <integer 1-5: how surprising or novel vs mainstream coverage>\n'
-        f"}}\n\n"
-        f"Title: {title}\n"
-        f"Content: {content}\n\n"
-        "JSON:"
-    )
+    return f"{system}\n\n{user}\n\nJSON:"
 
 
 class OllamaSummarizer(SummarizerProvider):
@@ -59,12 +51,20 @@ class OllamaSummarizer(SummarizerProvider):
         max_key_takeaways: int = 5,
         max_summary_paragraphs: int = 5,
         digest_language: str = "en",
+        briefing_title: str = "CondenseIt Digest",
+        briefing_audience: str = "general readers",
+        editorial_guidance: list[str] | None = None,
+        briefing_disclaimer: str = "",
     ) -> None:
         self.model = model
         self.client = ollama.Client(host=host)
         self.max_key_takeaways = max_key_takeaways
         self.max_summary_paragraphs = max_summary_paragraphs
         self.digest_language = digest_language
+        self.briefing_title = briefing_title
+        self.briefing_audience = briefing_audience
+        self.editorial_guidance = editorial_guidance or []
+        self.briefing_disclaimer = briefing_disclaimer
 
     @property
     def model_name(self) -> str:
@@ -83,6 +83,8 @@ class OllamaSummarizer(SummarizerProvider):
             self.max_key_takeaways,
             self.max_summary_paragraphs,
             language=language,
+            audience=self.briefing_audience,
+            editorial_guidance=self.editorial_guidance,
         )
         response = self.client.generate(
             model=self.model,
@@ -96,7 +98,7 @@ class OllamaSummarizer(SummarizerProvider):
                 "consider raising num_predict",
                 self.model,
             )
-        return parse_summary_response(response["response"])
+        return parse_summary_response(response["response"], language=language)
 
     def generate_digest(
         self,
@@ -104,4 +106,10 @@ class OllamaSummarizer(SummarizerProvider):
         changes: list[dict[str, str]] | None = None,
         videos: list[dict[str, Any]] | None = None,
     ) -> str:
-        return build_digest_markdown(categorized, changes, videos)
+        return build_digest_markdown(
+            categorized,
+            changes,
+            videos,
+            title=self.briefing_title,
+            disclaimer=self.briefing_disclaimer,
+        )

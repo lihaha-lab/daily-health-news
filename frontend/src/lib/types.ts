@@ -29,6 +29,7 @@ export interface ScoreBreakdown {
 export interface DigestItem {
   url: string;
   title: string;
+  original_title?: string;
   summary: string;
   /** One-sentence summary produced by the LLM structured output. */
   tldr?: string;
@@ -54,6 +55,8 @@ export interface DigestItem {
   novelty?: number;
   /** One-sentence relevance note for this reader. */
   relevance_to_you?: string;
+  /** Geographic scope stated by the source, or an explicit unknown marker. */
+  geographic_scope?: string;
   /** True when the article matched a per-source highlight keyword rule. */
   highlighted?: boolean;
 }

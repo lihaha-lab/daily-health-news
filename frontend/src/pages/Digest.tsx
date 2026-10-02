@@ -272,6 +272,25 @@ export function DigestPage({ onDigestLoaded }: DigestPageProps) {
         </div>
       </div>
 
+      <aside
+        role="note"
+        class="flex items-start gap-3 border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200"
+      >
+        <svg
+          class="mt-0.5 h-5 w-5 flex-shrink-0"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          stroke-width="1.8"
+          aria-hidden="true"
+        >
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3m0 4h.01M10.3 3.9 1.9 18.2A1.5 1.5 0 003.2 20.5h17.6a1.5 1.5 0 001.3-2.3L13.7 3.9a1.9 1.9 0 00-3.4 0z" />
+        </svg>
+        <p>
+          AI 整理草稿。转发或发布前，请人工核对事实、日期、数字和原始来源；涉及健康信息时，尤其核对药品名称、适用地区及处置建议。
+        </p>
+      </aside>
+
       {/* Card browser */}
       {hasItems && (
         <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-sm overflow-hidden">

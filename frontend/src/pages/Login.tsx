@@ -16,6 +16,7 @@ interface LoginPageProps {
  */
 export function LoginPage({ onLogin }: LoginPageProps) {
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -80,27 +81,58 @@ export function LoginPage({ onLogin }: LoginPageProps) {
             >
               Password
             </label>
-            <input
-              id='password'
-              type='password'
-              autoComplete='current-password'
-              required
-              value={password}
-              onInput={(e) =>
-                setPassword((e.target as HTMLInputElement).value)
-              }
-              placeholder='Enter your password'
-              class={[
-                'w-full px-3 py-2.5 rounded-lg text-sm border outline-none',
-                'bg-white dark:bg-slate-800',
-                'text-slate-900 dark:text-slate-100',
-                'placeholder-slate-400 dark:placeholder-slate-500',
-                'transition-colors',
-                error
-                  ? 'border-red-400 dark:border-red-500 focus:border-red-500 dark:focus:border-red-400'
-                  : 'border-slate-300 dark:border-slate-600 focus:border-teal-500 dark:focus:border-teal-400',
-              ].join(' ')}
-            />
+            <div class='relative'>
+              <input
+                id='password'
+                type={showPassword ? 'text' : 'password'}
+                autoComplete='current-password'
+                required
+                value={password}
+                onInput={(e) =>
+                  setPassword((e.target as HTMLInputElement).value)
+                }
+                placeholder='Enter your password'
+                class={[
+                  'w-full px-3 py-2.5 pr-11 rounded-lg text-sm border outline-none',
+                  'bg-white dark:bg-slate-800',
+                  'text-slate-900 dark:text-slate-100',
+                  'placeholder-slate-400 dark:placeholder-slate-500',
+                  'transition-colors',
+                  error
+                    ? 'border-red-400 dark:border-red-500 focus:border-red-500 dark:focus:border-red-400'
+                    : 'border-slate-300 dark:border-slate-600 focus:border-teal-500 dark:focus:border-teal-400',
+                ].join(' ')}
+              />
+              <button
+                type='button'
+                onClick={() => setShowPassword((visible) => !visible)}
+                title={showPassword ? 'Hide password' : 'Show password'}
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
+                aria-pressed={showPassword}
+                class='absolute inset-y-0 right-0 flex w-10 items-center justify-center text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
+              >
+                <svg
+                  class='h-5 w-5'
+                  fill='none'
+                  viewBox='0 0 24 24'
+                  stroke='currentColor'
+                  stroke-width='1.8'
+                  aria-hidden='true'
+                >
+                  {showPassword ? (
+                    <>
+                      <path stroke-linecap='round' stroke-linejoin='round' d='M3 3l18 18M10.6 10.6a2 2 0 002.8 2.8' />
+                      <path stroke-linecap='round' stroke-linejoin='round' d='M9.9 5.2A10.8 10.8 0 0112 5c5.2 0 8.5 4.3 9.5 6-.4.7-1.2 1.8-2.4 2.9M6.2 6.2C4.3 7.4 3.1 9 2.5 11c.8 1.4 4 6 9.5 6 1 0 1.9-.2 2.7-.5' />
+                    </>
+                  ) : (
+                    <path stroke-linecap='round' stroke-linejoin='round' d='M2.5 12s3.3-7 9.5-7 9.5 7 9.5 7-3.3 7-9.5 7-9.5-7-9.5-7z' />
+                  )}
+                  {!showPassword && (
+                    <circle cx='12' cy='12' r='2.5' />
+                  )}
+                </svg>
+              </button>
+            </div>
           </div>
 
           {/* Error message */}

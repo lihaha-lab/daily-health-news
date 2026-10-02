@@ -11,6 +11,9 @@ from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 
+TrustTier = Literal["primary", "authoritative", "reputable", "discovery"]
+PublicationMode = Literal["direct", "corroborate", "discovery_only"]
+
 # First-run credential when nothing is set in DB or env (override in production).
 LOCAL_INSTALL_FALLBACK_CREDENTIAL = (
     os.environ.get("CONDENSEIT_DEFAULT_PASSWORD", "").strip() or "condense" + "it"
@@ -21,6 +24,10 @@ class FeedConfig(BaseModel):
     url: str
     category: str = "General"
     priority: int = 2
+    publisher: str = ""
+    region: str = "global"
+    trust_tier: TrustTier = "reputable"
+    publication_mode: PublicationMode = "corroborate"
     hide_keywords: list[str] = Field(default_factory=list)
     highlight_keywords: list[str] = Field(default_factory=list)
     require_keywords: list[str] = Field(default_factory=list)
@@ -54,6 +61,11 @@ class GoogleNewsSearchConfig(BaseModel):
     country: str = "US"
     category: str = "General"
     priority: int = 2
+    publisher: str = ""
+    publisher_domains: list[str] = Field(default_factory=list)
+    region: str = "global"
+    trust_tier: TrustTier = "discovery"
+    publication_mode: PublicationMode = "discovery_only"
     hide_keywords: list[str] = Field(default_factory=list)
     highlight_keywords: list[str] = Field(default_factory=list)
     require_keywords: list[str] = Field(default_factory=list)
@@ -203,6 +215,15 @@ class VpsConfig(BaseModel):
     digest_url: str = ""
 
 
+class BriefingConfig(BaseModel):
+    """Audience and editorial policy shared by all summarizer providers."""
+
+    title: str = "CondenseIt Digest"
+    audience: str = "general readers"
+    editorial_guidance: list[str] = Field(default_factory=list)
+    disclaimer: str = ""
+
+
 class AppConfig(BaseModel):
     model: str = "llama3.2:3b"
     max_articles_per_digest: int = Field(default=50, ge=1, le=200)
@@ -230,12 +251,14 @@ class AppConfig(BaseModel):
     # "source" to auto-detect each article's language and summarize in that
     # language. Default "en" preserves the original English-only behaviour.
     digest_language: str = "en"
+    briefing: BriefingConfig = Field(default_factory=BriefingConfig)
     # schedule.times: list of "HH:MM" strings; schedule.timezone: IANA name.
     # Using dict[str, Any] because 'timezone' is a plain string, not a list.
     schedule: dict[str, Any] = Field(
         default_factory=lambda: {"times": ["07:00", "18:00"]},
     )
     feeds: list[FeedConfig] = Field(default_factory=list)
+    google_news: list[GoogleNewsSearchConfig] = Field(default_factory=list)
     youtube_channels: list[YouTubeChannelConfig] = Field(default_factory=list)
     watch_urls: list[WatchUrlConfig] = Field(default_factory=list)
     relevance: RelevanceConfig = Field(default_factory=RelevanceConfig)

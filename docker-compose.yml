@@ -1,20 +1,72 @@
-# Web UI only. Ollama and digest runs stay on the host (Metal GPU).
-# Shared ./data volume so native `condenseit run` appears in the UI.
+name: daily-health-news
+
+# All persistent state uses project-relative bind mounts so the project can be
+# moved to another machine without discovering anonymous Docker volumes.
 services:
-  app:
-    image: ${CONDENSEIT_IMAGE:-ghcr.io/wildlifechorus/condenseit:${CONDENSEIT_IMAGE_TAG:-latest}}
-    build: .
-    ports:
-      - "8899:8899"
+  ollama:
+    image: ollama/ollama:0.34.2
     environment:
-      CONDENSEIT_CONFIG: /app/config.yaml
+      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-10m}
+    volumes:
+      - ./data/ollama:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+
+  app:
+    build:
+      context: .
+    ports:
+      - "${APP_PORT:-8899}:8899"
+    environment:
+      CONDENSEIT_CONFIG: /app/config/topic-packs/${TOPIC_PACK:-health}/config.yaml
       CONDENSEIT_DATA_DIR: /app/data
       CONDENSEIT_FRONTEND_DIST: /app/frontend/dist
-      OLLAMA_HOST: http://host.docker.internal:11434
-      TZ: UTC
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+      CONDENSEIT_SCHEDULER_ENABLED: ${CONDENSEIT_SCHEDULER_ENABLED:-1}
+      CONDENSEIT_AUTH_PASSWORD: ${CONDENSEIT_AUTH_PASSWORD:-}
+      DIGEST_PWA_SESSION_SECRET: ${DIGEST_PWA_SESSION_SECRET:-}
+      OLLAMA_HOST: ${OLLAMA_HOST:-http://ollama:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:3b}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENAI_API_BASE_URL: ${OPENAI_API_BASE_URL:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-}
+      FEISHU_APP_ID: ${FEISHU_APP_ID:-}
+      FEISHU_APP_SECRET: ${FEISHU_APP_SECRET:-}
+      FEISHU_FOLDER_TOKEN: ${FEISHU_FOLDER_TOKEN:-}
+      FEISHU_DIGEST_DOCUMENT_ID: ${FEISHU_DIGEST_DOCUMENT_ID:-}
+      FEISHU_DIGEST_DOCUMENT_URL: ${FEISHU_DIGEST_DOCUMENT_URL:-}
+      FEISHU_BITABLE_APP_TOKEN: ${FEISHU_BITABLE_APP_TOKEN:-}
+      FEISHU_BITABLE_TABLE_ID: ${FEISHU_BITABLE_TABLE_ID:-}
+      FEISHU_BASE_URL: ${FEISHU_BASE_URL:-https://open.feishu.cn}
+      WECOM_WEBHOOK_URL: ${WECOM_WEBHOOK_URL:-}
+      WECOM_CORP_ID: ${WECOM_CORP_ID:-}
+      WECOM_AGENT_ID: ${WECOM_AGENT_ID:-}
+      WECOM_APP_SECRET: ${WECOM_APP_SECRET:-}
+      WECOM_TO_USER: ${WECOM_TO_USER:-}
+      WECOM_API_BASE_URL: ${WECOM_API_BASE_URL:-https://qyapi.weixin.qq.com}
+      TZ: ${TZ:-Asia/Shanghai}
+    depends_on:
+      ollama:
+        condition: service_healthy
     volumes:
-      - ./config.yaml:/app/config.yaml:ro
+      - ./config:/app/config:ro
       - ./data:/app/data
+      - ./storage:/app/storage
+      - ./logs:/app/logs
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://localhost:8899/health', timeout=3)"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    restart: unless-stopped
     command: ["condenseit", "serve", "--host", "0.0.0.0", "--port", "8899"]

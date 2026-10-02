@@ -1,4 +1,4 @@
-"""Deterministic digest markdown with links to every source."""
+"""Compact reader-facing digest markdown; source links stay in the archive table."""
 
 from datetime import UTC, datetime
 from typing import Any
@@ -8,13 +8,16 @@ def build_digest_markdown(
     categorized: dict[str, list[dict[str, Any]]],
     changes: list[dict[str, str]] | None = None,
     videos: list[dict[str, Any]] | None = None,
+    *,
+    title: str = "CondenseIt Digest",
+    disclaimer: str = "",
 ) -> str:
-    """Build digest markdown; every article/video includes a clickable link."""
-    stamp = datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC")
+    """Build a concise digest without embedding source URLs."""
+    stamp = datetime.now(UTC).strftime("%Y-%m-%d")
     lines: list[str] = [
-        "# CondenseIt Digest",
+        f"# {title}",
         "",
-        f"_{stamp}_",
+        stamp,
         "",
     ]
 
@@ -22,48 +25,29 @@ def build_digest_markdown(
         items = categorized[category]
         if not items:
             continue
-        lines.append(f"## {category}")
-        lines.append("")
         for item in items:
             lines.extend(_format_item(item))
-        lines.append("")
 
     if videos:
-        lines.append("## Videos")
-        lines.append("")
         for item in videos:
             lines.extend(_format_item(item))
-        lines.append("")
 
-    if changes:
-        lines.append("## Website changes")
-        lines.append("")
-        for change in changes:
-            url = change.get("url", "")
-            status = change.get("status", "updated")
-            lines.append(f"- **[{status}]({url})** — {url}")
-        lines.append("")
-
-    if len(lines) <= 4:
-        lines.append("_No new items in this run._")
+    if len(lines) == 4:
+        lines.append("今日暂无符合主题的新闻。")
 
     return "\n".join(lines).strip() + "\n"
 
 
 def _format_item(item: dict[str, Any]) -> list[str]:
     title = (item.get("title") or "Untitled").strip()
-    url = (item.get("url") or "").strip()
     summary = (item.get("summary") or "").strip()
     source = (item.get("source") or "").strip()
+    published_at = (item.get("published_at") or "").strip()
+    date = published_at[:10] if len(published_at) >= 10 else "日期未标注"
 
-    if url:
-        bullet = f"- **[{title}]({url})**"
-    else:
-        bullet = f"- **{title}**"
-
-    out = [bullet]
-    if summary:
-        out.append(f"  {summary}")
-    if source:
-        out.append(f"  _via {source}_")
-    return out
+    return [
+        f"### {date}｜{title}",
+        f"**来源：** {source or '未标注'}",
+        f"**摘要：** {summary or '暂无摘要'}",
+        "",
+    ]

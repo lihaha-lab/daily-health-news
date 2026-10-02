@@ -9,6 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Self
+from urllib.parse import urlsplit
 
 import markdown
 import numpy as np
@@ -101,6 +102,22 @@ def _apply_source_rules(
     return out
 
 
+def _apply_publication_mode(
+    articles: list[dict[str, Any]],
+    publication_mode: str,
+    source_label: str,
+) -> list[dict[str, Any]]:
+    """Keep discovery-only items out of automatic summaries and publishing."""
+    if publication_mode != "discovery_only":
+        return articles
+    logger.info(
+        "Publication policy: held %d discovery-only item(s) for %s",
+        len(articles),
+        source_label,
+    )
+    return []
+
+
 class DigestPipeline:
     def __init__(self, config_path: str | None = None) -> None:
         self.config: AppConfig = load_config(config_path)
@@ -187,10 +204,22 @@ class DigestPipeline:
         start = time.time()
         logger.info("Starting digest pipeline")
 
-        feeds = self.sources.feeds_for_config() or self.config.feeds
-        youtube = self.sources.youtube_for_config() or self.config.youtube_channels
-        watch = self.sources.watch_for_config() or self.config.watch_urls
-        gnews = self.sources.google_news_for_config()
+        # The registry is authoritative once a source type has been seeded.
+        # In particular, disabled DB rows must not fall back to YAML defaults.
+        feeds = self._sources_or_defaults(
+            "rss", self.sources.feeds_for_config(), self.config.feeds
+        )
+        youtube = self._sources_or_defaults(
+            "youtube", self.sources.youtube_for_config(), self.config.youtube_channels
+        )
+        watch = self._sources_or_defaults(
+            "website", self.sources.watch_for_config(), self.config.watch_urls
+        )
+        gnews = self._sources_or_defaults(
+            "google_news",
+            self.sources.google_news_for_config(),
+            self.config.google_news,
+        )
         hackernews = self.sources.hackernews_for_config()
         reddit = self.sources.reddit_for_config()
         github_releases = self.sources.github_releases_for_config()
@@ -199,14 +228,21 @@ class DigestPipeline:
         rss = RSSCollector(feeds)
         articles: list[dict[str, Any]] = []
         for _feed, items, err in rss.collect_feed_results():
-            articles.extend(
-                _apply_source_rules(
-                    [a.to_dict() for a in items],
-                    _feed.hide_keywords,
-                    _feed.highlight_keywords,
-                    _feed.require_keywords,
-                )
+            source_items = [a.to_dict() for a in items]
+            accepted = _apply_source_rules(
+                source_items,
+                _feed.hide_keywords,
+                _feed.highlight_keywords,
+                _feed.require_keywords,
             )
+            if len(accepted) != len(source_items):
+                logger.info(
+                    "Source rules (%s): fetched %d, retained %d",
+                    _feed.publisher or _feed.url,
+                    len(source_items),
+                    len(accepted),
+                )
+            articles.extend(accepted)
             self.sources.record_health(
                 _feed.url,
                 status="ok" if err is None else "error",
@@ -231,14 +267,25 @@ class DigestPipeline:
             src_articles, src_health = GoogleNewsCollector(
                 [cfg],
             ).collect_all_with_health()
-            articles.extend(
-                _apply_source_rules(
-                    src_articles,
-                    cfg.hide_keywords,
-                    cfg.highlight_keywords,
-                    cfg.require_keywords,
-                )
+            accepted = _apply_source_rules(
+                src_articles,
+                cfg.hide_keywords,
+                cfg.highlight_keywords,
+                cfg.require_keywords,
             )
+            accepted = _apply_publication_mode(
+                accepted,
+                cfg.publication_mode,
+                cfg.publisher or cfg.query,
+            )
+            if len(accepted) != len(src_articles):
+                logger.info(
+                    "Source rules (%s): fetched %d, retained %d",
+                    cfg.publisher or cfg.query,
+                    len(src_articles),
+                    len(accepted),
+                )
+            articles.extend(accepted)
             self._record_health(src_health)
 
         for cfg in hackernews:
@@ -298,30 +345,50 @@ class DigestPipeline:
             self._record_health(src_health)
 
         articles.extend(v.to_dict() for v in videos)
+        logger.info("Collection complete: %d article candidates", len(articles))
 
         # Persist new articles and identify the truly fresh subset.
         fresh = self.store.deduplicate(articles)
 
-        today_midnight = datetime.now(UTC).replace(
-            hour=0, minute=0, second=0, microsecond=0
+        max_age_hours = self.config.max_article_age_hours
+        pool_cutoff = (
+            datetime.now(UTC) - timedelta(hours=max_age_hours)
+            if max_age_hours > 0
+            else None
         )
-        todays_articles = self.store.articles_collected_since(today_midnight)
+        recent_articles = (
+            self.store.articles_collected_since(pool_cutoff)
+            if pool_cutoff is not None
+            else []
+        )
+        recent_articles = self._filter_cached_articles_to_active_sources(
+            recent_articles
+        )
 
-        if todays_articles:
-            articles = todays_articles
+        if recent_articles:
+            articles = recent_articles
             logger.info(
-                "Same-day accumulation: %d articles collected today"
+                "Rolling accumulation: %d articles collected in the last %d hours"
                 " (%d net-new this run)",
-                len(todays_articles),
+                len(recent_articles),
+                max_age_hours,
                 len(fresh),
             )
         else:
-            articles = fresh
+            articles = self._filter_cached_articles_to_active_sources(fresh)
 
+        before_age = len(articles)
         articles = self._filter_by_age(articles)
+        logger.info("Age filter: %d -> %d", before_age, len(articles))
+        before_read = len(articles)
         articles = self._filter_read(articles)
+        logger.info("Already-read filter: %d -> %d", before_read, len(articles))
+        before_language = len(articles)
         articles = self._filter_by_language(articles)
+        logger.info("Language filter: %d -> %d", before_language, len(articles))
+        before_keywords = len(articles)
         articles = self._filter_by_excluded_keywords(articles)
+        logger.info("Excluded-keyword filter: %d -> %d", before_keywords, len(articles))
 
         keywords = self.config.relevance.initial_keywords
         ranked = self.preferences.rank_articles(
@@ -453,7 +520,12 @@ class DigestPipeline:
                 is_video = art["url"] in video_urls
                 entry_kind = "video" if is_video else str(art.get("kind") or "article")
                 entry = {
-                    "title": art["title"],
+                    "title": result.get("translated_title") or art["title"],
+                    "hook_title": result.get("hook_title")
+                    or result.get("translated_title")
+                    or art["title"],
+                    "original_title": art["title"],
+                    "geographic_scope": result.get("geographic_scope") or "",
                     "url": art["url"],
                     "summary": result["summary"],
                     "tldr": result["tldr"],
@@ -536,6 +608,17 @@ class DigestPipeline:
         logger.info("Digest complete in %s", self.stats["processing_time"])
         return self.stats
 
+    def _sources_or_defaults(
+        self,
+        source_type: str,
+        registered: list[Any],
+        defaults: list[Any],
+    ) -> list[Any]:
+        """Use topic-pack defaults only before this source type is registered."""
+        if self.sources.has_type(source_type):
+            return registered
+        return defaults
+
     def _filter_by_age(self, articles: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Drop articles whose published_at is older than max_article_age_hours.
 
@@ -576,6 +659,95 @@ class DigestPipeline:
                 len(kept),
             )
         return kept
+
+    def _filter_cached_articles_to_active_sources(
+        self,
+        articles: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Exclude cached articles from disabled or no-longer-allowed sources."""
+
+        def _matches_domain(host: str, domain: str) -> bool:
+            return host == domain or host.endswith(f".{domain}")
+
+        rows = self.sources.list_all()
+        active_domains = {
+            (urlsplit(row["url"]).hostname or "").lower()
+            for row in rows
+            if row["type"] == "rss" and row["enabled"]
+        }
+        disabled_domains = {
+            (urlsplit(row["url"]).hostname or "").lower()
+            for row in rows
+            if row["type"] == "rss" and not row["enabled"]
+        }
+        disabled_domains = {
+            domain
+            for domain in disabled_domains
+            if not any(
+                _matches_domain(domain, active) or _matches_domain(active, domain)
+                for active in active_domains
+            )
+        }
+        active_searches = self.sources.google_news_for_config()
+        known_publishers = {
+            source.publisher.casefold()
+            for source in active_searches
+            if source.publisher
+        }
+        known_domains = {
+            domain.casefold().lstrip(".")
+            for source in active_searches
+            if not source.publisher
+            for domain in source.publisher_domains
+        }
+        for row in rows:
+            if row["type"] != "google_news":
+                continue
+            extra = json.loads(row.get("extra_json") or "{}")
+            publisher = str(extra.get("publisher") or "").casefold()
+            if publisher:
+                known_publishers.add(publisher)
+            else:
+                known_domains.update(
+                    str(domain).casefold().lstrip(".")
+                    for domain in extra.get("publisher_domains") or []
+                )
+
+        def _is_eligible(article: dict[str, Any]) -> bool:
+            host = (urlsplit(str(article.get("url") or "")).hostname or "").casefold()
+            if any(_matches_domain(host, domain) for domain in disabled_domains):
+                return False
+
+            publisher = str(article.get("source") or "").casefold()
+            is_search_result = publisher in known_publishers or any(
+                _matches_domain(host, domain) for domain in known_domains
+            )
+            if not is_search_result:
+                return True
+
+            category = str(article.get("category") or "")
+            for source in active_searches:
+                if source.publication_mode == "discovery_only":
+                    continue
+                if category and category != source.category:
+                    continue
+                if source.publisher and publisher != source.publisher.casefold():
+                    continue
+                if not any(
+                    _matches_domain(host, domain.casefold().lstrip("."))
+                    for domain in source.publisher_domains
+                ):
+                    continue
+                if _apply_source_rules(
+                    [article],
+                    source.hide_keywords,
+                    source.highlight_keywords,
+                    source.require_keywords,
+                ):
+                    return True
+            return False
+
+        return [article for article in articles if _is_eligible(article)]
 
     def _filter_read(self, articles: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Exclude articles the user has already marked as read.
@@ -916,6 +1088,7 @@ class DigestPipeline:
                 {
                     "id": i,
                     "title": str(art.get("title", "")),
+                    "hook_title": str(art.get("title", "")),
                     "url": u,
                     "summary": "",
                     "tldr": "",
@@ -955,7 +1128,9 @@ class DigestPipeline:
         video_count: int,
     ) -> str:
         lines = [
-            f"# CondenseIt Dry Run — {datetime.now(UTC).isoformat()}",
+            f"# {self.config.briefing.title}（采集预览）",
+            "",
+            f"_{datetime.now(UTC).isoformat()}_",
             "",
             f"Collected **{len(articles)}** articles, **{video_count}** videos.",
             "",
@@ -969,6 +1144,10 @@ class DigestPipeline:
             lines.append("\n## Website changes\n")
             for c in changes:
                 lines.append(f"- {c['status']}: {c['url']}")
+        if self.config.briefing.disclaimer.strip():
+            lines.extend(
+                ["", "---", "", f"> {self.config.briefing.disclaimer.strip()}"]
+            )
         return "\n".join(lines)
 
     def _save_outputs(self) -> None:

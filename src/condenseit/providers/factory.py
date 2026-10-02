@@ -22,6 +22,7 @@ def build_summarizer(
     model = config.model
     max_takeaways = config.max_key_takeaways
     max_paragraphs = config.max_summary_paragraphs
+    briefing = config.briefing
 
     if provider == "ollama":
         return OllamaSummarizer(
@@ -30,6 +31,10 @@ def build_summarizer(
             max_key_takeaways=max_takeaways,
             max_summary_paragraphs=max_paragraphs,
             digest_language=config.digest_language,
+            briefing_title=briefing.title,
+            briefing_audience=briefing.audience,
+            editorial_guidance=briefing.editorial_guidance,
+            briefing_disclaimer=briefing.disclaimer,
         )
 
     if provider == "openai":
@@ -46,6 +51,10 @@ def build_summarizer(
             max_key_takeaways=max_takeaways,
             max_summary_paragraphs=max_paragraphs,
             digest_language=config.digest_language,
+            briefing_title=briefing.title,
+            briefing_audience=briefing.audience,
+            editorial_guidance=briefing.editorial_guidance,
+            briefing_disclaimer=briefing.disclaimer,
         )
 
     or_key = keys.get_key("openrouter") or config.llm.openrouter_api_key
@@ -71,6 +80,10 @@ def build_summarizer(
         max_key_takeaways=max_takeaways,
         max_summary_paragraphs=max_paragraphs,
         digest_language=config.digest_language,
+        briefing_title=briefing.title,
+        briefing_audience=briefing.audience,
+        editorial_guidance=briefing.editorial_guidance,
+        briefing_disclaimer=briefing.disclaimer,
     )
 
     if provider == "openrouter":
@@ -83,6 +96,10 @@ def build_summarizer(
             max_key_takeaways=max_takeaways,
             max_summary_paragraphs=max_paragraphs,
             digest_language=config.digest_language,
+            briefing_title=briefing.title,
+            briefing_audience=briefing.audience,
+            editorial_guidance=briefing.editorial_guidance,
+            briefing_disclaimer=briefing.disclaimer,
         )
         return FallbackChainProvider(ollama, cloud)
 

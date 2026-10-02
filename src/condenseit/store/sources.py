@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from condenseit.api_urls import youtube_channel_feed_url
+from condenseit.collectors.google_news import build_gnews_url
 from condenseit.config import (
     AppConfig,
     FeedConfig,
@@ -46,6 +47,8 @@ class SourceRegistry:
             )
         else:
             self._ensure_source_health_columns()
+        if "source_tombstones" not in self.store.db.table_names():
+            self.store.db["source_tombstones"].create({"url": str}, pk="url")
 
     def _ensure_source_health_columns(self) -> None:
         rows = list(self.store.db.execute("PRAGMA table_info(sources)"))
@@ -88,17 +91,74 @@ class SourceRegistry:
         )
 
     def seed_from_config(self, config: AppConfig) -> None:
-        existing_urls = {row["url"] for row in self.store.db["sources"].rows}
+        existing_by_url = {
+            row["url"]: dict(row) for row in self.store.db["sources"].rows
+        }
+        deleted_urls = {
+            row["url"] for row in self.store.db["source_tombstones"].rows
+        }
 
         def _add_if_new(*args: Any, **kwargs: Any) -> None:
             url = kwargs.get("url") if "url" in kwargs else args[4]
-            if url in existing_urls:
+            if url in deleted_urls:
+                return
+            if url in existing_by_url:
+                row = existing_by_url[url]
+                configured_extra = kwargs.get("extra") or {}
+                current_extra = json.loads(row.get("extra_json") or "{}")
+                merged_extra = {**configured_extra, **current_extra}
+                updates: dict[str, Any] = {}
+                if merged_extra != current_extra:
+                    updates["extra_json"] = json.dumps(merged_extra)
+                configured_name = kwargs.get("name") if "name" in kwargs else args[1]
+                if row["name"] == url and configured_name != url:
+                    updates["name"] = configured_name
+                if updates:
+                    self.store.db["sources"].update(row["id"], updates)
+                    row.update(updates)
                 return
             self.add(*args, **kwargs)
-            existing_urls.add(url)
+            existing_by_url[url] = {"url": url}
 
         for feed in config.feeds:
-            _add_if_new("rss", feed.url, feed.category, feed.priority, feed.url)
+            _add_if_new(
+                "rss",
+                feed.publisher or feed.url,
+                feed.category,
+                feed.priority,
+                feed.url,
+                extra={
+                    "publisher": feed.publisher,
+                    "region": feed.region,
+                    "trust_tier": feed.trust_tier,
+                    "publication_mode": feed.publication_mode,
+                    "hide_keywords": feed.hide_keywords,
+                    "highlight_keywords": feed.highlight_keywords,
+                    "require_keywords": feed.require_keywords,
+                },
+            )
+        for search in config.google_news:
+            feed_url = build_gnews_url(search)
+            _add_if_new(
+                "google_news",
+                search.query,
+                search.category,
+                search.priority,
+                feed_url,
+                extra={
+                    "query": search.query,
+                    "language": search.language,
+                    "country": search.country,
+                    "publisher": search.publisher,
+                    "publisher_domains": search.publisher_domains,
+                    "region": search.region,
+                    "trust_tier": search.trust_tier,
+                    "publication_mode": search.publication_mode,
+                    "hide_keywords": search.hide_keywords,
+                    "highlight_keywords": search.highlight_keywords,
+                    "require_keywords": search.require_keywords,
+                },
+            )
         for ch in config.youtube_channels:
             rss = youtube_channel_feed_url(ch.channel_id)
             _add_if_new(
@@ -133,6 +193,7 @@ class SourceRegistry:
         enabled: bool = True,
         extra: dict[str, Any] | None = None,
     ) -> int:
+        self.store.db.execute("DELETE FROM source_tombstones WHERE url = ?", [url])
         row = {
             "type": source_type,
             "name": name,
@@ -155,7 +216,24 @@ class SourceRegistry:
     def list_all(self) -> list[dict[str, Any]]:
         return [dict(r) for r in self.store.db["sources"].rows]
 
+    def has_type(self, source_type: str) -> bool:
+        """Return whether this type has ever been configured in the registry.
+
+        Disabled rows still count: an empty enabled list may be an intentional
+        user choice and must not cause topic-pack defaults to reappear.
+        """
+        return (
+            self.store.db.execute(
+                "SELECT 1 FROM sources WHERE type = ? LIMIT 1", [source_type]
+            ).fetchone()
+            is not None
+        )
+
     def delete(self, source_id: int) -> None:
+        source = self.store.db["sources"].get(source_id)
+        self.store.db["source_tombstones"].insert(
+            {"url": source["url"]}, replace=True
+        )
         self.store.db["sources"].delete(source_id)
 
     def toggle(self, source_id: int, enabled: bool) -> None:
@@ -199,6 +277,10 @@ class SourceRegistry:
                         url=r["url"],
                         category=r["category"],
                         priority=int(r["priority"]),
+                        publisher=extra.get("publisher") or r["name"],
+                        region=extra.get("region") or "global",
+                        trust_tier=extra.get("trust_tier") or "reputable",
+                        publication_mode=extra.get("publication_mode") or "corroborate",
                         hide_keywords=extra.get("hide_keywords") or [],
                         highlight_keywords=extra.get("highlight_keywords") or [],
                         require_keywords=extra.get("require_keywords") or [],
@@ -262,6 +344,11 @@ class SourceRegistry:
                     country=extra.get("country", "US"),
                     category=r["category"],
                     priority=int(r["priority"]),
+                    publisher=extra.get("publisher", ""),
+                    publisher_domains=extra.get("publisher_domains") or [],
+                    region=extra.get("region", "global"),
+                    trust_tier=extra.get("trust_tier", "discovery"),
+                    publication_mode=extra.get("publication_mode", "discovery_only"),
                     hide_keywords=extra.get("hide_keywords") or [],
                     highlight_keywords=extra.get("highlight_keywords") or [],
                     require_keywords=extra.get("require_keywords") or [],

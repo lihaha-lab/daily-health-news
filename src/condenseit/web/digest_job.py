@@ -1,11 +1,13 @@
 """Background digest runs triggered from the web UI."""
 
+import json
 import logging
 import threading
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from typing import Any
 
+from condenseit.publishers.delivery import publish_digest
 from condenseit.services.digest_runner import execute_digest
 
 logger = logging.getLogger(__name__)
@@ -117,17 +119,71 @@ class DigestJobManager:
             articles = stats.get("articles_count", 0)
             slim_stats = {k: v for k, v in stats.items() if k != "digest_items"}
             digest_id = result.get("digest_id")
+            post = result.get("post") or {}
+            delivery: dict[str, Any] = {"status": "skipped", "reason": "dry run"}
+            if not dry_run and self._store is not None:
+                has_content = any(
+                    stats.get(key, 0) > 0
+                    for key in ("articles_count", "videos_count", "changes_count")
+                )
+                if not has_content:
+                    delivery = {
+                        "status": "skipped",
+                        "reason": "No eligible content; delivery skipped",
+                    }
+                else:
+                    digest = self._store.latest_digest()
+                    if digest and digest.get("markdown"):
+                        try:
+                            digest_stats = json.loads(digest.get("stats_json") or "{}")
+                        except json.JSONDecodeError:
+                            digest_stats = {}
+                        digest_items = (
+                            digest_stats.get("digest_items", [])
+                            if isinstance(digest_stats, dict)
+                            else []
+                        )
+                        delivery = publish_digest(
+                            digest["markdown"],
+                            articles=(
+                                digest_items if isinstance(digest_items, list) else []
+                            ),
+                            published_at=digest.get("created_at"),
+                        )
+                    else:
+                        delivery = {
+                            "status": "failed",
+                            "reason": "digest content not found",
+                        }
+            post["delivery"] = delivery
+            delivery_states = [
+                item.get("status")
+                for item in delivery.values()
+                if isinstance(item, dict)
+            ]
+            sent_count = delivery_states.count("sent")
+            if sent_count:
+                delivery_message = f"; delivered to {sent_count} channel(s)"
+            elif not any(
+                stats.get(key, 0) > 0
+                for key in ("articles_count", "videos_count", "changes_count")
+            ):
+                delivery_message = "; no eligible content, nothing sent"
+            elif "failed" in delivery_states:
+                delivery_message = "; delivery failed (see channel status)"
+            else:
+                delivery_message = "; no delivery channel configured"
             with self._lock:
                 self._snapshot = DigestJobSnapshot(
                     state="completed",
                     message=(
                         f"Done: {articles} articles in "
-                        f"{stats.get('processing_time', '?')}"
+                        f"{stats.get('processing_time', '?')}{delivery_message}"
                     ),
                     started_at=self._snapshot.started_at,
                     finished_at=_now_iso(),
                     stats=slim_stats,
-                    post=result.get("post"),
+                    post=post,
                     digest_id=digest_id,
                 )
         except Exception as exc:

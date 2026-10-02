@@ -73,3 +73,36 @@ def test_collect_feed_falls_back_to_urllib_on_403(
     assert articles[0].title == "Recovered article"
     assert articles[0].url == article_url
     assert articles[0].category == "Test"
+
+
+def test_collect_feed_uses_configured_publisher_name(monkeypatch) -> None:
+    feed_url = "https://example.com/feed"
+    article_url = "https://example.com/post"
+    xml = f"""<?xml version="1.0" encoding="UTF-8"?>
+    <rss version="2.0"><channel><title>Feed vendor title</title><item>
+      <title>Health update</title><link>{article_url}</link>
+      <description>Useful health information.</description>
+      <pubDate>Wed, 23 Sep 2026 08:00:00 GMT</pubDate>
+    </item></channel></rss>"""
+    feed = FeedConfig(
+        url=feed_url,
+        category="Everyday health",
+        publisher="Configured publisher",
+    )
+    collector = RSSCollector([feed])
+
+    class FakeClient:
+        def get(self, url: str) -> httpx.Response:
+            request = httpx.Request("GET", url)
+            return httpx.Response(200, request=request, text=xml)
+
+    collector.client = FakeClient()
+    monkeypatch.setattr(
+        RSSCollector,
+        "_extract_content",
+        lambda self, url, entry: ("Useful health information.", None),
+    )
+
+    articles = collector._collect_feed(feed)
+
+    assert articles[0].source == "Configured publisher"

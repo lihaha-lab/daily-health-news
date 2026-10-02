@@ -284,6 +284,12 @@ export function DigestCard({
             </a>
           </h3>
 
+          {item.original_title && item.original_title !== item.title && (
+            <p class="mt-1 text-xs text-slate-400 dark:text-slate-500 line-clamp-2">
+              原标题：{item.original_title}
+            </p>
+          )}
+
           {metaParts.length > 0 && (
             <p class="mt-1 text-xs text-slate-400 dark:text-slate-500">
               {metaParts.join(' · ')}
@@ -313,6 +319,12 @@ export function DigestCard({
           onClick={onSelect ? () => onSelect(item) : undefined}
         >
           {summary}
+        </p>
+      )}
+
+      {item.geographic_scope && (
+        <p class="text-xs text-slate-500 dark:text-slate-400">
+          适用范围：{item.geographic_scope}
         </p>
       )}
 

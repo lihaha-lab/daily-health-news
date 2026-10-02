@@ -283,10 +283,22 @@ export function ItemDetailPanel({
             {item.title || 'Untitled'}
           </h1>
 
+          {item.original_title && item.original_title !== item.title && (
+            <p class="text-sm text-slate-500 dark:text-slate-400">
+              原标题：{item.original_title}
+            </p>
+          )}
+
           {/* Meta */}
           {metaParts.length > 0 && (
             <p class="text-sm text-slate-400 dark:text-slate-500">
               {metaParts.join(' · ')}
+            </p>
+          )}
+
+          {item.geographic_scope && (
+            <p class="text-sm text-slate-600 dark:text-slate-300">
+              <span class="font-medium">适用范围：</span>{item.geographic_scope}
             </p>
           )}
 

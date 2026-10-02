@@ -98,7 +98,7 @@ class RSSCollector:
 
     def _collect_feed(self, feed: FeedConfig) -> list[CollectedArticle]:
         parsed = feedparser.parse(self._fetch_feed_text(feed.url))
-        source_title = parsed.feed.get("title", feed.url)
+        source_title = feed.publisher or parsed.feed.get("title", feed.url)
         items: list[CollectedArticle] = []
 
         for entry in parsed.entries[:15]:

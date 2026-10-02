@@ -1,7 +1,7 @@
 [project]
 name = "condenseit"
 version = "0.1.0"
-description = "AI-powered personal news digest with local LLM support"
+description = "Configurable daily health news briefing based on CondenseIt"
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.11"
@@ -12,6 +12,7 @@ dependencies = [
   "cryptography>=43.0",
   "fastapi>=0.115",
   "feedparser>=6.0",
+  "googlenewsdecoder>=0.2.1",
   "httpx>=0.27",
   "itsdangerous>=2.1",
   "jinja2>=3.1",
@@ -34,9 +35,10 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/wildlifechorus/condenseit"
-Repository = "https://github.com/wildlifechorus/condenseit"
-Issues = "https://github.com/wildlifechorus/condenseit/issues"
+Homepage = "https://github.com/lihaha-lab/daily-health-news"
+Repository = "https://github.com/lihaha-lab/daily-health-news"
+Issues = "https://github.com/lihaha-lab/daily-health-news/issues"
+Upstream = "https://github.com/wildlifechorus/condenseit"
 
 [project.optional-dependencies]
 dev = [

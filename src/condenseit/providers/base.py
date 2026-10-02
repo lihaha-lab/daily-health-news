@@ -4,7 +4,7 @@ import json
 import logging
 import re
 from abc import ABC, abstractmethod
-from typing import Any, TypedDict
+from typing import Any, NotRequired, TypedDict
 
 logger = logging.getLogger(__name__)
 
@@ -107,6 +107,9 @@ def resolve_digest_language(digest_language: str, content: str = "") -> str:
 class ArticleSummary(TypedDict):
     """Structured output from a single article summarization call."""
 
+    translated_title: str
+    hook_title: NotRequired[str]
+    geographic_scope: str
     tldr: str
     key_takeaways: list[str]
     summary: str
@@ -117,6 +120,9 @@ class ArticleSummary(TypedDict):
 
 
 _EMPTY_SUMMARY = ArticleSummary(
+    translated_title="",
+    hook_title="",
+    geographic_scope="",
     tldr="",
     key_takeaways=[],
     summary="",
@@ -153,7 +159,14 @@ _PARTIAL_STR_FIELD_RE = {
         r'"' + re.escape(field) + r'"\s*:\s*"((?:[^"\\]|\\.)*)"',
         re.DOTALL,
     )
-    for field in ("tldr", "summary", "relevance_to_you")
+    for field in (
+        "translated_title",
+        "hook_title",
+        "geographic_scope",
+        "tldr",
+        "summary",
+        "relevance_to_you",
+    )
 }
 # key_takeaways: match a fully-closed JSON array value.
 _PARTIAL_ARRAY_FIELD_RE = {
@@ -166,7 +179,7 @@ _PARTIAL_ARRAY_FIELD_RE = {
 _PARTIAL_INT_FIELD_RE = re.compile(r'"novelty"\s*:\s*(\d+)')
 
 
-def _strip_non_latin_tail(value: str) -> str:
+def _strip_non_latin_tail(value: str, preserve_non_latin: bool = False) -> str:
     """Remove a trailing CJK/non-Latin injection appended by the LLM.
 
     Some cheap multilingual models start answering in English, then switch
@@ -174,6 +187,9 @@ def _strip_non_latin_tail(value: str) -> str:
     CJK run that makes up more than 30 % of the remaining text and truncates
     there, returning a clean Latin-script prefix.
     """
+    if preserve_non_latin:
+        return value
+
     for m in _CJK_BLOCK_RE.finditer(value):
         tail = value[m.start() :]
         non_ascii_in_tail = sum(1 for c in tail if ord(c) > 127)
@@ -182,7 +198,24 @@ def _strip_non_latin_tail(value: str) -> str:
     return value
 
 
-def _extract_partial_fields(text: str) -> ArticleSummary | None:
+def _dedupe_repeated_sentences(value: str) -> str:
+    """Remove exact repeated sentences while preserving their original order."""
+    sentences = re.findall(r".+?(?:[。！？.!?](?:\s+|$)|$)", value.strip())
+    result: list[str] = []
+    seen: set[str] = set()
+    for sentence in sentences:
+        cleaned = sentence.strip()
+        key = re.sub(r"\s+", "", cleaned).casefold()
+        if cleaned and key not in seen:
+            result.append(sentence)
+            seen.add(key)
+    return "".join(result).strip()
+
+
+def _extract_partial_fields(
+    text: str,
+    preserve_non_latin: bool = False,
+) -> ArticleSummary | None:
     """Try to extract individual fields from a truncated JSON string.
 
     When the LLM response is cut off mid-value (max_tokens hit), the JSON
@@ -248,14 +281,30 @@ def _extract_partial_fields(text: str) -> ArticleSummary | None:
     )
 
     return ArticleSummary(
-        tldr=_strip_non_latin_tail(str(result.get("tldr", "") or "").strip()),
-        key_takeaways=[_strip_non_latin_tail(str(t)) for t in takeaways if t],
-        summary=_strip_non_latin_tail(str(result.get("summary", "") or "").strip()),
+        translated_title=str(result.get("translated_title", "") or "").strip(),
+        hook_title=str(result.get("hook_title", "") or "").strip(),
+        geographic_scope=str(result.get("geographic_scope", "") or "").strip(),
+        tldr=_strip_non_latin_tail(
+            _dedupe_repeated_sentences(str(result.get("tldr", "") or "")),
+            preserve_non_latin,
+        ),
+        key_takeaways=[
+            _strip_non_latin_tail(
+                _dedupe_repeated_sentences(str(t)), preserve_non_latin
+            )
+            for t in takeaways
+            if t
+        ],
+        summary=_strip_non_latin_tail(
+            _dedupe_repeated_sentences(str(result.get("summary", "") or "")),
+            preserve_non_latin,
+        ),
         topics=topics,
         entities=entities[:10],
         novelty=result.get("novelty") or 0,
         relevance_to_you=_strip_non_latin_tail(
-            str(result.get("relevance_to_you", "") or "").strip()
+            _dedupe_repeated_sentences(str(result.get("relevance_to_you", "") or "")),
+            preserve_non_latin,
         ),
     )
 
@@ -266,7 +315,10 @@ def _looks_like_json(text: str) -> bool:
     return stripped.startswith("{")
 
 
-def parse_summary_response(raw: str) -> ArticleSummary:
+def parse_summary_response(
+    raw: str,
+    language: str = "English",
+) -> ArticleSummary:
     """Parse a JSON article-summary response produced by an LLM.
 
     Attempts several strategies in order:
@@ -280,6 +332,7 @@ def parse_summary_response(raw: str) -> ArticleSummary:
     Always returns a fully-populated :class:`ArticleSummary` dict.
     """
     text = (raw or "").strip()
+    preserve_non_latin = language.casefold() != "english"
 
     candidates: list[str] = [
         text,
@@ -328,23 +381,39 @@ def parse_summary_response(raw: str) -> ArticleSummary:
                 novelty = 0
 
             return ArticleSummary(
-                tldr=_strip_non_latin_tail(str(data.get("tldr", "") or "").strip()),
-                key_takeaways=[_strip_non_latin_tail(str(t)) for t in takeaways if t],
+                translated_title=str(data.get("translated_title", "") or "").strip(),
+                hook_title=str(data.get("hook_title", "") or "").strip(),
+                geographic_scope=str(data.get("geographic_scope", "") or "").strip(),
+                tldr=_strip_non_latin_tail(
+                    _dedupe_repeated_sentences(str(data.get("tldr", "") or "")),
+                    preserve_non_latin,
+                ),
+                key_takeaways=[
+                    _strip_non_latin_tail(
+                        _dedupe_repeated_sentences(str(t)), preserve_non_latin
+                    )
+                    for t in takeaways
+                    if t
+                ],
                 summary=_strip_non_latin_tail(
-                    str(data.get("summary", "") or "").strip()
+                    _dedupe_repeated_sentences(str(data.get("summary", "") or "")),
+                    preserve_non_latin,
                 ),
                 topics=topics,
                 entities=entities[:10],
                 novelty=novelty,
                 relevance_to_you=_strip_non_latin_tail(
-                    str(data.get("relevance_to_you", "") or "").strip()
+                    _dedupe_repeated_sentences(
+                        str(data.get("relevance_to_you", "") or "")
+                    ),
+                    preserve_non_latin,
                 ),
             )
         except (json.JSONDecodeError, ValueError):
             continue
 
     # Partial-field recovery for truncated responses (max_tokens hit).
-    partial = _extract_partial_fields(text)
+    partial = _extract_partial_fields(text, preserve_non_latin)
     if partial is not None:
         logger.debug(
             "parse_summary_response: recovered partial fields from truncated JSON"
@@ -353,7 +422,7 @@ def parse_summary_response(raw: str) -> ArticleSummary:
 
     if text:
         non_ascii = sum(1 for c in text if ord(c) > 127)
-        if non_ascii / len(text) > 0.2:
+        if not preserve_non_latin and non_ascii / len(text) > 0.2:
             return _EMPTY_SUMMARY
 
         if _looks_like_json(text):
@@ -364,6 +433,9 @@ def parse_summary_response(raw: str) -> ArticleSummary:
             return _EMPTY_SUMMARY
 
     return ArticleSummary(
+        translated_title="",
+        hook_title="",
+        geographic_scope="",
         tldr="",
         key_takeaways=[],
         summary=text,
@@ -374,19 +446,37 @@ def parse_summary_response(raw: str) -> ArticleSummary:
     )
 
 
-def build_chat_system_prompt(language: str = "English") -> str:
+def build_chat_system_prompt(
+    language: str = "English",
+    audience: str = "general readers",
+    editorial_guidance: list[str] | None = None,
+) -> str:
     """Return the system prompt for chat-completions providers.
 
     ``language`` is a human-readable language name such as ``"English"`` or
     ``"French"``.  All JSON field values in the response will be written in
     that language.
     """
-    return (
+    guidance = " ".join(
+        instruction.strip().rstrip(".") + "."
+        for instruction in (editorial_guidance or [])
+        if instruction.strip()
+    )
+    prompt = (
         "You are a concise news analyst. Respond ONLY with a JSON object — "
         "no markdown, no code fences, no additional text. "
         f"Write all JSON field values in {language} "
-        "regardless of the article's language."
+        f"for this audience: {audience}. "
+        "Do not invent facts or imply certainty beyond the source. "
+        "Keep every field concise, remove repetition, and distinguish source facts "
+        "from implications for readers. Preserve medicine, chemical, company, "
+        "product, dose, and unit names exactly as given in the source; translate "
+        "only their surrounding description. Never invent a personal action, "
+        "such as stopping or starting a medicine, unless the source explicitly "
+        "recommends it for the affected reader and states the applicable scope. "
+        "When the source does not support a reader action, say so plainly."
     )
+    return f"{prompt} {guidance}".strip()
 
 
 # Backward-compatible alias for the default English system prompt.
@@ -409,14 +499,32 @@ def build_chat_user_prompt(
         f'"<takeaway {i + 1}>"' for i in range(max_key_takeaways)
     )
     para_word = "paragraph" if max_summary_paragraphs == 1 else "paragraphs"
+    unknown_scope = (
+        "来源未说明"
+        if language.casefold() in {"chinese", "zh", "zh-cn", "zh-tw"}
+        else "not specified in the source"
+    )
 
     return (
         "Analyze this article and respond with a JSON object "
         f"in exactly this structure. All values must be written in {language}:\n"
         f"{{\n"
-        f'  "tldr": "<one sentence in {language}: what happened and why it matters>",\n'
+        '  "translated_title": "<faithful, concise translation of the source '
+        f'title in {language}; preserve medicine, chemical, product, and '
+        'organization names exactly; do not add claims>",\n'
+        '  "hook_title": "<short, engaging reader-facing headline in '
+        f'{language}, at most 24 Chinese characters when writing Chinese; '
+        'accurate to the source, no clickbait or unsupported health claims>",\n'
+        '  "geographic_scope": "<country or region explicitly stated in the '
+        f'source; otherwise say {unknown_scope}>",\n'
+        f'  "tldr": "<one sentence in {language}, at most 45 Chinese '
+        'characters when writing Chinese>",\n'
         f'  "key_takeaways": [{takeaway_placeholders}],\n'
-        f'  "summary": "<detailed summary in {language}, {max_summary_paragraphs} {para_word}>",\n'  # noqa: E501
+        f'  "summary": "<concise source-grounded summary in {language}, '
+        f'{max_summary_paragraphs} short {para_word}, at most 160 Chinese '
+        'characters when writing Chinese; do not repeat tldr or takeaways>",\n'
+        '  "relevance_to_you": "<one restrained sentence explaining relevance '
+        'to the stated audience; say when no direct personal action is implied>",\n'
         f'  "topics": ["<topic-1>", "<topic-2>", "<topic-3>"],\n'
         f'  "entities": ["<person-org-product-1>", "<entity-2>"],\n'
         f'  "novelty": <integer 1-5: how surprising or novel vs mainstream coverage>\n'

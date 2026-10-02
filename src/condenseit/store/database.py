@@ -302,11 +302,9 @@ class ContentStore:
         """Update mutable labels when the same URL reappears unchanged.
 
         ``collected_at`` is intentionally NOT updated here. It retains the
-        timestamp of the first time this article was collected, which keeps
-        ``articles_collected_since(today_midnight)`` scoped to articles that
-        are genuinely new today. Refreshing ``collected_at`` caused articles
-        from previous days to re-enter the same-day pool on every pipeline
-        run as long as the article was still present in the RSS feed.
+        timestamp of the first time this article was collected. The pipeline
+        uses this timestamp to build a bounded rolling pool; refreshing it
+        would keep old feed entries in that pool indefinitely.
         """
         row = dict(existing)
         row["title"] = str(incoming.get("title", row.get("title", "")))
@@ -323,8 +321,8 @@ class ContentStore:
     def articles_collected_since(self, cutoff: datetime) -> list[dict[str, Any]]:
         """Return all articles whose ``collected_at`` is at or after ``cutoff``.
 
-        Used by the pipeline to accumulate same-day articles across multiple
-        runs instead of shrinking the pool to only net-new items.
+        Used by the pipeline to accumulate recent articles across runs instead
+        of shrinking the pool to only net-new items from the current run.
         """
         cutoff_str = cutoff.isoformat()
         return list(

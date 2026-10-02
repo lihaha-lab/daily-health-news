@@ -36,6 +36,10 @@ class OpenAISummarizer(SummarizerProvider):
         max_key_takeaways: int = 5,
         max_summary_paragraphs: int = 5,
         digest_language: str = "en",
+        briefing_title: str = "CondenseIt Digest",
+        briefing_audience: str = "general readers",
+        editorial_guidance: list[str] | None = None,
+        briefing_disclaimer: str = "",
     ) -> None:
         self.model = model
         # Normalise: strip trailing slash so we can always append /chat/completions.
@@ -44,6 +48,10 @@ class OpenAISummarizer(SummarizerProvider):
         self.max_key_takeaways = max_key_takeaways
         self.max_summary_paragraphs = max_summary_paragraphs
         self.digest_language = digest_language
+        self.briefing_title = briefing_title
+        self.briefing_audience = briefing_audience
+        self.editorial_guidance = editorial_guidance or []
+        self.briefing_disclaimer = briefing_disclaimer
 
     @property
     def model_name(self) -> str:
@@ -104,7 +112,14 @@ class OpenAISummarizer(SummarizerProvider):
         title = article.get("title", "Untitled")
         language = resolve_digest_language(self.digest_language, content)
         messages = [
-            {"role": "system", "content": build_chat_system_prompt(language)},
+            {
+                "role": "system",
+                "content": build_chat_system_prompt(
+                    language,
+                    self.briefing_audience,
+                    self.editorial_guidance,
+                ),
+            },
             {
                 "role": "user",
                 "content": build_chat_user_prompt(
@@ -117,7 +132,7 @@ class OpenAISummarizer(SummarizerProvider):
             },
         ]
         raw = self._chat(messages)
-        return parse_summary_response(raw)
+        return parse_summary_response(raw, language=language)
 
     def generate_digest(
         self,
@@ -125,4 +140,10 @@ class OpenAISummarizer(SummarizerProvider):
         changes: list[dict[str, str]] | None = None,
         videos: list[dict[str, Any]] | None = None,
     ) -> str:
-        return build_digest_markdown(categorized, changes, videos)
+        return build_digest_markdown(
+            categorized,
+            changes,
+            videos,
+            title=self.briefing_title,
+            disclaimer=self.briefing_disclaimer,
+        )

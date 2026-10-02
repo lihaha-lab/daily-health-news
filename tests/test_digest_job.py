@@ -47,3 +47,36 @@ def test_job_manager_completes() -> None:
         assert snap["digest_id"] == 42
         assert "post_display" in snap
         assert snap["post_display"] == ""
+
+
+def test_empty_digest_is_not_published() -> None:
+    class EmptyStore:
+        def latest_digest(self) -> dict[str, str]:
+            raise AssertionError("empty digest must not be sent")
+
+        def save_run_log(self, *_args: object) -> None:
+            pass
+
+    manager = DigestJobManager(store=EmptyStore())
+    with (
+        patch("condenseit.web.digest_job.execute_digest") as mock_run,
+        patch("condenseit.web.digest_job.publish_digest") as mock_publish,
+    ):
+        mock_run.return_value = {
+            "stats": {
+                "articles_count": 0,
+                "videos_count": 0,
+                "changes_count": 0,
+                "processing_time": "1s",
+            },
+            "post": {},
+            "digest_id": 43,
+        }
+        ok, _ = manager.start()
+        assert ok is True
+        if manager._thread:
+            manager._thread.join(timeout=2)
+
+        assert manager.snapshot()["state"] == "completed"
+        assert "no eligible content" in manager.snapshot()["message"]
+        mock_publish.assert_not_called()

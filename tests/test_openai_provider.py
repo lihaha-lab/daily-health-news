@@ -13,6 +13,7 @@ from condenseit.config import AppConfig, LlmConfig, load_config
 from condenseit.providers.base import (
     CHAT_SYSTEM_PROMPT,
     SummarizerProvider,
+    build_chat_system_prompt,
     build_chat_user_prompt,
 )
 from condenseit.providers.openai_provider import OpenAISummarizer
@@ -48,6 +49,17 @@ class TestSharedPromptHelpers:
         assert "JSON" in CHAT_SYSTEM_PROMPT
         assert len(CHAT_SYSTEM_PROMPT) > 20
 
+    def test_system_prompt_supports_audience_and_editorial_guidance(self) -> None:
+        prompt = build_chat_system_prompt(
+            "Chinese",
+            "普通公众",
+            ["解释专业术语", "不要提供个体化医疗建议"],
+        )
+
+        assert "普通公众" in prompt
+        assert "解释专业术语" in prompt
+        assert "不要提供个体化医疗建议" in prompt
+
     def test_build_chat_user_prompt_contains_title_and_content(self) -> None:
         prompt = build_chat_user_prompt("My Title", "Some content here")
         assert "My Title" in prompt
@@ -65,12 +77,12 @@ class TestSharedPromptHelpers:
 
     def test_build_chat_user_prompt_paragraph_singular(self) -> None:
         prompt = build_chat_user_prompt("T", "C", max_summary_paragraphs=1)
-        assert "1 paragraph" in prompt
+        assert "1 short paragraph" in prompt
         assert "paragraphs" not in prompt
 
     def test_build_chat_user_prompt_paragraph_plural(self) -> None:
         prompt = build_chat_user_prompt("T", "C", max_summary_paragraphs=3)
-        assert "3 paragraphs" in prompt
+        assert "3 short paragraphs" in prompt
 
     def test_openrouter_provider_uses_shared_helpers(self) -> None:
         """OpenRouterSummarizer must import from base, not define locally."""
@@ -250,6 +262,34 @@ class TestOpenAISummarizerSummarize:
         assert result["summary"] == "Detailed text here."
         assert result["topics"] == ["ai", "news"]
         assert result["novelty"] == 3
+
+    def test_summarize_article_preserves_chinese_output(self) -> None:
+        summarizer = OpenAISummarizer(
+            model="test-model",
+            base_url="http://localhost:1234/v1",
+            api_key="sk-test",
+            digest_language="zh",
+        )
+        chinese_json = json.dumps(
+            {
+                "tldr": "监管机构发布了新的药品安全提醒。",
+                "key_takeaways": ["提醒适用于特定批次。", "公众无需普遍恐慌。"],
+                "summary": "该提醒说明了受影响产品及适用地区。",
+                "topics": ["药品安全"],
+                "entities": ["监管机构"],
+                "novelty": 2,
+            },
+            ensure_ascii=False,
+        )
+        with self._patch_chat(summarizer, chinese_json):
+            result = summarizer.summarize_article({"title": "测试", "content": "内容"})
+
+        assert result["tldr"] == "监管机构发布了新的药品安全提醒。"
+        assert result["key_takeaways"] == [
+            "提醒适用于特定批次。",
+            "公众无需普遍恐慌。",
+        ]
+        assert result["summary"] == "该提醒说明了受影响产品及适用地区。"
 
     def test_summarize_article_sends_system_prompt(self) -> None:
         summarizer = self._make_summarizer()

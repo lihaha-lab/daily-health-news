@@ -34,8 +34,15 @@ data/
 
 # Local app config (copy from config.example.yaml; see README)
 config.yaml
+!config/topic-packs/*/config.yaml
 config.local.yaml
 *.local.yaml
+
+# Runtime content and recoverable backups
+storage/
+backups/
+*.backup
+*.bak
 
 # Personal fixtures / seeds (add paths you use locally)
 scripts/local/
