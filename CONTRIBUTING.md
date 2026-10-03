@@ -1,29 +1,33 @@
 # Contributing
 
-Thanks for helping improve CondenseIt.
+Daily Health News is a configurable fork of
+[CondenseIt](https://github.com/wildlifechorus/condenseit). Contributions to the
+news workflow, documentation, and topic packs are welcome.
 
-## Development setup
+## Before opening a pull request
+
+- Keep changes focused and add tests for changed behavior.
+- Do not commit `.env`, API credentials, database files, downloaded news,
+  generated briefings, logs, or backups.
+- Keep source and filtering rules in a topic pack when possible. The health
+  example lives in `config/topic-packs/health/`.
+- Distinguish verified source facts from generated summaries. Health content
+  must not be presented as individual medical advice.
+
+## Local checks
+
+Use Python 3.11+ and Node.js 20+:
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -e ".[dev]"
-cp config.example.yaml config.yaml
-```
-
-Run checks:
-
-```bash
+python -m pip install -e ".[dev]"
 ruff check src tests
 pytest tests/
+cd frontend
+npm ci
+npm run build
 ```
 
-## Pull requests
+For a full local run, copy `.env.example` to `.env`, supply your own credentials,
+and use `docker compose up -d --build`.
 
-- Keep changes focused on one concern when possible.
-- Add or update tests for behavior you change.
-- Run `ruff` and `pytest` before opening a PR.
-
-## Security
-
-Please report sensitive issues privately (see `SECURITY.md`).
+Report security-sensitive issues privately as described in `SECURITY.md`.

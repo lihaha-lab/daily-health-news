@@ -2,7 +2,9 @@
 
 ## Supported versions
 
-We aim to support the latest tagged release. Older versions may not receive fixes.
+This project is still in active development and has no supported release series
+yet. Security fixes are applied to the current `main` branch; older commits may
+not receive fixes.
 
 ## Reporting a vulnerability
 
