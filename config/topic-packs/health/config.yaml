@@ -19,7 +19,7 @@ briefing:
     - "公开人物突发健康事件可纳入，但只按来源明确写出的事实表述；死因未明确时不得写成因心梗/猝死去世，不暗示未证实的生活习惯导致死亡"
     - "标题可以简洁醒目，但不得夸大或将未经证实的死因写成确定事实"
     - "摘要面向普通人，简明说明发生了什么、与日常健康有什么关联；不要堆医学术语，不提供诊断、处方或个体化治疗建议"
-    - "摘要尽量用1至2句提醒读者重视心脑血管保健：日常管理血压、血脂、血糖、运动和作息，识别胸痛等警讯并及时就医；只写与原报道相符的提醒，不承诺保健品疗效，也不将疾病归咎于个人"
+    - "摘要只概括原文确实谈到的心脑血管事实；有直接依据时才用1至2句说明其与日常预防的关系。不得为普通运动、情绪或其他健康新闻硬加心脑血管提醒，不承诺保健品疗效，也不将疾病归咎于个人"
     - "心血管年报和研究数据须注明年份、统计范围及来源，不把旧数据说成最新数据，不把相关性说成因果"
     - "即使来源门槛放宽，也必须保留可追溯的原文链接到新闻表格；无法确认的内容标注为媒体报道或线索，不冒充官方结论"
     - "文档简报只呈现日期、标题、来源和内容摘要；不展示来源链接、原始标题、分类、读者视角或额外免责声明"
@@ -184,6 +184,45 @@ exclude_keywords:
   - "advertorial"
   - "promotional campaign"
 
+# A hard gate on the original title or source snippet. Generic wellness terms
+# deliberately do not qualify; fewer relevant stories beat padded digests.
+required_topic_keywords:
+  - "心脑血管"
+  - "心血管"
+  - "心脏"
+  - "心梗"
+  - "心肌梗"
+  - "心衰"
+  - "心律失常"
+  - "房颤"
+  - "冠心病"
+  - "心源性"
+  - "心肺复苏"
+  - "AED"
+  - "卒中"
+  - "中风"
+  - "脑血管"
+  - "脑梗"
+  - "脑出血"
+  - "动脉粥样硬化"
+  - "cardiovascular"
+  - "cardiac arrest"
+  - "heart attack"
+  - "heart disease"
+  - "stroke"
+  - "coronary"
+  - "atrial fibrillation"
+
+# These risk-factor terms qualify only when the headline is about them.
+# Incidental mentions in generic diet or exercise stories are insufficient.
+required_title_keywords:
+  - "高血压"
+  - "血压"
+  - "血脂"
+  - "胆固醇"
+  - "hypertension"
+  - "blood pressure"
+
 relevance:
   min_ratings_for_learning: 5
   tfidf_preference_weight: 0.35
@@ -197,21 +236,20 @@ relevance:
   initial_keywords:
     high:
       - "心脑血管"
-      - "心梗猝死"
-      - "饮食营养"
-      - "食品安全"
-      - "运动健身"
-      - "睡眠"
-      - "心理健康"
-      - "健康生活"
-      - "家庭健康"
+      - "心血管"
+      - "心脏"
+      - "心梗"
+      - "卒中"
+      - "心脏骤停"
+      - "冠心病"
     medium:
       - "心血管年报"
-      - "体重管理"
-      - "儿童健康"
-      - "老年健康"
-      - "常见病预防"
-      - "保健品辟谣"
+      - "高血压"
+      - "血压"
+      - "血脂"
+      - "饮食营养"
+      - "运动健身"
+      - "睡眠"
   topic_synonyms:
     everyday_wellness: ["健康生活", "日常保健", "生活方式", "wellbeing", "healthy lifestyle"]
     food_nutrition: ["饮食营养", "食品安全", "nutrition", "healthy diet", "food safety"]

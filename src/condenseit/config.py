@@ -241,6 +241,11 @@ class AppConfig(BaseModel):
             "promotional campaign",
         ],
     )
+    # Optional hard topic gate applied to original article text before ranking.
+    # An empty list preserves the general-purpose workflow's existing behavior.
+    required_topic_keywords: list[str] = Field(default_factory=list)
+    # Broader terms qualify only when the source headline itself names them.
+    required_title_keywords: list[str] = Field(default_factory=list)
     # LLM summarization tuning.
     max_key_takeaways: int = Field(default=5, ge=1, le=10)
     max_summary_paragraphs: int = Field(default=5, ge=1, le=10)

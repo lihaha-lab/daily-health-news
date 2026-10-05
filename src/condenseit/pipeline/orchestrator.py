@@ -118,6 +118,25 @@ def _apply_publication_mode(
     return []
 
 
+def _apply_topic_gate(
+    articles: list[dict[str, Any]],
+    required_keywords: list[str],
+    title_keywords: list[str] | None = None,
+) -> list[dict[str, Any]]:
+    """Require a topic signal in the original title or article snippet."""
+    if not required_keywords and not title_keywords:
+        return articles
+    return [
+        article
+        for article in articles
+        if _article_matches_keywords(article, required_keywords)
+        or any(
+            _keyword_matches_text(keyword, str(article.get("title") or "").lower())
+            for keyword in title_keywords or []
+        )
+    ]
+
+
 class DigestPipeline:
     def __init__(self, config_path: str | None = None) -> None:
         self.config: AppConfig = load_config(config_path)
@@ -389,6 +408,14 @@ class DigestPipeline:
         before_keywords = len(articles)
         articles = self._filter_by_excluded_keywords(articles)
         logger.info("Excluded-keyword filter: %d -> %d", before_keywords, len(articles))
+
+        before_topic = len(articles)
+        articles = _apply_topic_gate(
+            articles,
+            self.config.required_topic_keywords,
+            self.config.required_title_keywords,
+        )
+        logger.info("Required-topic filter: %d -> %d", before_topic, len(articles))
 
         keywords = self.config.relevance.initial_keywords
         ranked = self.preferences.rank_articles(

@@ -3,7 +3,8 @@
 ## Pipeline
 
 1. Collect RSS and allowlisted Google News publisher pages.
-2. Apply per-source and global keyword, age, and language rules.
+2. Apply per-source and global keyword, age, and language rules, then require
+   an explicit topic term in the original title or source snippet.
 3. Rank and summarize candidates with the configured LLM.
 4. Save the digest and attempt each configured delivery independently.
 
@@ -55,6 +56,14 @@ publish to live destinations; it is not a preview button. The API exposes a
 dry-run mode, but the web UI does not yet provide per-stage preview and
 approval controls. Disable the schedule while experimenting and make one
 configuration change at a time.
+
+The health pack's `required_topic_keywords` and `required_title_keywords`
+lists form the hard relevance gate. The latter accepts broader terms only in
+the original headline. Edit them in `config/topic-packs/health/config.yaml`
+to adjust scope, then rebuild the app container. Empty lists disable the gate
+for another topic pack.
+The run log's `Required-topic filter` count shows how many candidates survived.
+Old digests already saved or published are not rewritten by a rule change.
 
 ## Persistence and migration
 

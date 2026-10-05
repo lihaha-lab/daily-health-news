@@ -17,6 +17,20 @@ def test_app_config_defaults() -> None:
     assert cfg.llm.provider == "openrouter"
     assert cfg.vps.enabled is True
     assert cfg.preferred_languages == []
+    assert cfg.required_topic_keywords == []
+    assert cfg.required_title_keywords == []
+
+
+def test_health_pack_requires_cardio_topic() -> None:
+    config_path = (
+        Path(__file__).resolve().parents[1]
+        / "config/topic-packs/health/config.yaml"
+    )
+    cfg = load_config(config_path)
+
+    assert "心血管" in cfg.required_topic_keywords
+    assert "高血压" in cfg.required_title_keywords
+    assert "健康" not in cfg.required_topic_keywords
 
 
 def test_max_articles_env_override(
