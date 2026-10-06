@@ -2,7 +2,7 @@ model: "${OLLAMA_MODEL:-qwen2.5:3b}"
 max_articles_per_digest: 5
 balance_digest_categories: true
 max_articles_per_category: 5
-max_article_age_hours: 168
+max_article_age_hours: 72
 preferred_languages: []
 digest_language: "zh"
 max_key_takeaways: 2
@@ -28,6 +28,33 @@ briefing:
 schedule:
   timezone: "Pacific/Auckland"
   times: ["11:00"]
+
+health_review:
+  enabled: true
+  require_publication_date: true
+  hold_person_events: true
+  contributor_markers: ["本文为澎湃号作者或机构", "仅代表该作者或机构观点"]
+  caution_title_phrases: ["当心", "找上门", "震惊", "暴增", "你可能"]
+  minimum_source_text_chars: 150
+  selection_windows_hours: [24, 48, 72]
+  target_articles: 3
+
+# A bounded daily rotation, not every Cartesian combination. The site domain
+# is the media dimension; only publisher URLs on this allowlist are fetched.
+search_matrix:
+  enabled: true
+  max_queries_per_run: 10
+  lookback_days: 3
+  identities: ["民警", "辅警", "干部", "教师", "医生", "消防员", "公务员", "交警", "护士", "企业负责人", "社区工作人员", "教授"]
+  events: ["心梗", "心脏骤停", "脑梗", "脑出血", "卒中", "急性心肌梗死", "心源性猝死", "心肺复苏"]
+  event_clues: ["因公殉职", "突发疾病", "抢救无效", "因病去世"]
+  general_events: ["心梗", "心脏骤停", "脑卒中", "高血压", "AED"]
+  media:
+    - {name: "杭州网", domains: ["hangzhou.com.cn"], region: "浙江"}
+    - {name: "羊城晚报", domains: ["ycwb.com"], region: "广东"}
+    - {name: "澎湃新闻", domains: ["thepaper.cn"], region: "上海"}
+    - {name: "大河网", domains: ["dahe.cn"], region: "河南"}
+    - {name: "大众网", domains: ["dzwww.com"], region: "山东"}
 
 # This edition prioritizes consumer-facing health and everyday prevention.
 # Professional regulatory feeds are intentionally not part of the main stream.

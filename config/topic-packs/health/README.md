@@ -26,6 +26,18 @@ food or exercise story does not qualify it. Broad terms such as "health" and
 produce fewer stories rather than fill the digest with unrelated news.
 Other topic packs may leave both lists empty or replace them with their own.
 
+The health edition also enables `health_review` and a bounded `search_matrix`.
+Matrix searches rotate identity, event, and allowlisted regional publisher
+domains each day. The 24/48/72-hour selection prefers fresh news. The review
+log records why each candidate was ready, held, or excluded; it is visible at
+`/admin/health-review`. "Ready" means the automatic rules passed, **not** that
+a human or medical professional verified every claim. Personal death and
+collapse reports stay on hold until the original attribution and cause have
+been checked separately.
+
+See `WORKFLOW_STATUS.md` for debugging steps and remaining gaps before treating
+this as a fully verified news service.
+
 See `BRIEFING.md` for the public-facing section structure, evidence rules,
 required fields, and prohibited editorial patterns.
 

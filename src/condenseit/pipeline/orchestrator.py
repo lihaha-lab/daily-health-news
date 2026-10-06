@@ -31,6 +31,13 @@ from condenseit.learning.embeddings import (
 from condenseit.learning.preference_engine import PreferenceEngine
 from condenseit.learning.reranker import build_profile_narrative, rerank
 from condenseit.pipeline.article_balance import select_balanced_digest_articles
+from condenseit.pipeline.health_review import (
+    generated_claim_issues,
+    matrix_queries,
+    prior_digest_urls,
+    review_health_candidates,
+    select_recent_articles,
+)
 from condenseit.providers.base import SummarizerProvider
 from condenseit.providers.budget import BudgetTracker
 from condenseit.providers.factory import build_summarizer
@@ -239,6 +246,12 @@ class DigestPipeline:
             self.sources.google_news_for_config(),
             self.config.google_news,
         )
+        matrix = matrix_queries(self.config.search_matrix)
+        if matrix:
+            logger.info("Health search matrix: %d rotating queries", len(matrix))
+            for search in matrix:
+                logger.info("Health matrix query: %s", search.query)
+            gnews = [*gnews, *matrix]
         hackernews = self.sources.hackernews_for_config()
         reddit = self.sources.reddit_for_config()
         github_releases = self.sources.github_releases_for_config()
@@ -365,6 +378,8 @@ class DigestPipeline:
 
         articles.extend(v.to_dict() for v in videos)
         logger.info("Collection complete: %d article candidates", len(articles))
+        collected_count = len(articles)
+        unique_url_count = len({str(article.get("url")) for article in articles})
 
         # Persist new articles and identify the truly fresh subset.
         fresh = self.store.deduplicate(articles)
@@ -381,7 +396,7 @@ class DigestPipeline:
             else []
         )
         recent_articles = self._filter_cached_articles_to_active_sources(
-            recent_articles
+            recent_articles, extra_searches=matrix
         )
 
         if recent_articles:
@@ -394,10 +409,13 @@ class DigestPipeline:
                 len(fresh),
             )
         else:
-            articles = self._filter_cached_articles_to_active_sources(fresh)
+            articles = self._filter_cached_articles_to_active_sources(
+                fresh, extra_searches=matrix
+            )
 
         before_age = len(articles)
         articles = self._filter_by_age(articles)
+        recent_count = len(articles)
         logger.info("Age filter: %d -> %d", before_age, len(articles))
         before_read = len(articles)
         articles = self._filter_read(articles)
@@ -410,12 +428,33 @@ class DigestPipeline:
         logger.info("Excluded-keyword filter: %d -> %d", before_keywords, len(articles))
 
         before_topic = len(articles)
-        articles = _apply_topic_gate(
-            articles,
-            self.config.required_topic_keywords,
-            self.config.required_title_keywords,
-        )
-        logger.info("Required-topic filter: %d -> %d", before_topic, len(articles))
+        candidate_audit: list[dict[str, str]] = []
+        if self.config.health_review.enabled:
+            used_urls = prior_digest_urls(
+                self.store.list_digests(limit=90),
+                timezone=str(self.config.schedule.get("timezone") or "UTC"),
+            )
+            articles, candidate_audit = review_health_candidates(
+                articles,
+                required_keywords=self.config.required_topic_keywords,
+                title_keywords=self.config.required_title_keywords,
+                config=self.config.health_review,
+                previously_used_urls=used_urls,
+            )
+            held = sum(row["status"] == "review" for row in candidate_audit)
+            logger.info(
+                "Health review: %d -> %d ready, %d held for review",
+                before_topic,
+                len(articles),
+                held,
+            )
+        else:
+            articles = _apply_topic_gate(
+                articles,
+                self.config.required_topic_keywords,
+                self.config.required_title_keywords,
+            )
+            logger.info("Required-topic filter: %d -> %d", before_topic, len(articles))
 
         keywords = self.config.relevance.initial_keywords
         ranked = self.preferences.rank_articles(
@@ -491,6 +530,12 @@ class DigestPipeline:
                 logger.info("LLM reranker applied (model=%s)", _rerank_model)
 
         max_n = self.config.max_articles_per_digest
+        if self.config.health_review.enabled:
+            ranked = select_recent_articles(
+                ranked,
+                self.config.health_review,
+                max_articles=max_n,
+            )
         if self.config.balance_digest_categories:
             rel = self.config.relevance
             # Learned per-category preference (explicit + implicit) so the
@@ -542,7 +587,23 @@ class DigestPipeline:
                 summaries = list(pool.map(self.summarizer.summarize_article, ranked))
 
             # Process results sequentially to keep DB writes off worker threads.
+            final_articles: list[dict[str, Any]] = []
             for art, result in zip(ranked, summaries):
+                if self.config.health_review.enabled:
+                    issues = generated_claim_issues(art, result)
+                    if issues:
+                        for row in candidate_audit:
+                            if row["url"] == art.get("url"):
+                                row["status"] = "review"
+                                row["reason"] = ",".join(issues)
+                                break
+                        logger.warning(
+                            "Health claim review held %s: %s",
+                            art.get("url"),
+                            ", ".join(issues),
+                        )
+                        continue
+                final_articles.append(art)
                 category = str(art.get("category", "General"))
                 is_video = art["url"] in video_urls
                 entry_kind = "video" if is_video else str(art.get("kind") or "article")
@@ -590,6 +651,8 @@ class DigestPipeline:
                 else:
                     categorized.setdefault(category, []).append(entry)
 
+            ranked = final_articles
+
             self.digest_md = self.summarizer.generate_digest(
                 categorized,
                 changes,
@@ -622,13 +685,34 @@ class DigestPipeline:
             "cost_usd": 0.0,
             "digest_items": digest_items,
         }
-        self._save_outputs()
-        digest_id = self.store.save_digest(
-            self.digest_md,
-            self.digest_html,
-            json.dumps(self.stats),
-        )
+        if self.config.health_review.enabled:
+            self.stats["candidate_flow"] = {
+                "collected": collected_count,
+                "unique_urls": unique_url_count,
+                "age_window": recent_count,
+                "automatically_selected": len(ranked),
+            }
+            self.stats["candidate_audit"] = candidate_audit
+            self.stats["candidate_counts"] = {
+                state: sum(row["status"] == state for row in candidate_audit)
+                for state in ("ready", "review", "rejected")
+            }
+            self.store.save_candidate_audit(
+                {
+                    "flow": self.stats["candidate_flow"],
+                    "counts": self.stats["candidate_counts"],
+                    "items": candidate_audit,
+                    "selected_urls": [str(a.get("url") or "") for a in ranked],
+                    "dry_run": dry_run,
+                }
+            )
         if not dry_run:
+            self._save_outputs()
+            digest_id = self.store.save_digest(
+                self.digest_md,
+                self.digest_html,
+                json.dumps(self.stats),
+            )
             self.store.attach_spending_to_digest(self.digest_run_id, digest_id)
             self.stats["cost_usd"] = self.store.sum_spending_for_digest(digest_id)
             self.store.update_digest_stats(digest_id, json.dumps(self.stats))
@@ -690,6 +774,8 @@ class DigestPipeline:
     def _filter_cached_articles_to_active_sources(
         self,
         articles: list[dict[str, Any]],
+        *,
+        extra_searches: list[Any] | None = None,
     ) -> list[dict[str, Any]]:
         """Exclude cached articles from disabled or no-longer-allowed sources."""
 
@@ -715,7 +801,9 @@ class DigestPipeline:
                 for active in active_domains
             )
         }
-        active_searches = self.sources.google_news_for_config()
+        active_searches = [
+            *self.sources.google_news_for_config(), *(extra_searches or [])
+        ]
         known_publishers = {
             source.publisher.casefold()
             for source in active_searches

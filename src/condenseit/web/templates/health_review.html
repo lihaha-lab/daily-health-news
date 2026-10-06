@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="page-header">
+  <h1>候选审核</h1>
+  {% if latest %}<p class="page-lead">最近审核：{{ latest.created_at[:19] }} UTC · #{{ latest.id }}</p>{% endif %}
+</header>
+
+{% if not enabled %}
+<p>当前主题未启用健康新闻审核。</p>
+{% else %}
+<div class="stat-grid">
+  <div class="stat"><div class="stat-value">{{ flow.get('collected', 0) }}</div><div class="stat-label">抓取</div></div>
+  <div class="stat"><div class="stat-value">{{ flow.get('unique_urls', 0) }}</div><div class="stat-label">去重后 URL</div></div>
+  <div class="stat"><div class="stat-value">{{ flow.get('age_window', 0) }}</div><div class="stat-label">时效范围内</div></div>
+  <div class="stat"><div class="stat-value">{{ counts.get('ready', 0) }}</div><div class="stat-label">可进入简报候选</div></div>
+  <div class="stat"><div class="stat-value">{{ counts.get('review', 0) }}</div><div class="stat-label">待人工核验</div></div>
+  <div class="stat"><div class="stat-value">{{ counts.get('rejected', 0) }}</div><div class="stat-label">已排除</div></div>
+  <div class="stat"><div class="stat-value">{{ flow.get('automatically_selected', 0) }}</div><div class="stat-label">最终自动入选</div></div>
+</div>
+<p class="page-lead">“可进入简报候选”仅表示通过自动规则，不等于医学事实已由人工核实。人物突发事件需要人工查证原始来源和死因。</p>
+
+<h2>候选记录</h2>
+<div class="table-wrap">
+  <table>
+    <thead><tr><th>状态</th><th>标题与原文</th><th>发布时间</th><th>原因</th></tr></thead>
+    <tbody>
+      {% for item in audit %}
+      <tr>
+        <td>{{ item.status_label }}</td>
+        <td><a href="{{ item.url }}" target="_blank" rel="noopener noreferrer">{{ item.title }}</a></td>
+        <td>{{ item.published_at[:19] or '待核实' }}</td>
+        <td>{{ item.reason_label }}</td>
+      </tr>
+      {% else %}<tr><td colspan="4">暂无审核记录。运行一次简报后查看。</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<h2>本次轮换搜索词</h2>
+<div class="table-wrap">
+  <table><tbody>{% for query in queries %}<tr><td>{{ query }}</td></tr>{% endfor %}</tbody></table>
+</div>
+{% endif %}
+{% endblock %}

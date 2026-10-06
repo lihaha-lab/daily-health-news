@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -34,6 +35,24 @@ def test_health_and_api_endpoints(
     latest = client.get("/api/digests/latest", headers=_AUTH)
     assert latest.status_code == 200
     assert latest.json() is None
+
+
+def test_health_candidate_review_page(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("CONDENSEIT_DATA_DIR", str(tmp_path / "data"))
+    config_path = (
+        Path(__file__).resolve().parents[1]
+        / "config/topic-packs/health/config.yaml"
+    )
+    client = TestClient(create_app(str(config_path)))
+
+    response = client.get("/admin/health-review", headers=_AUTH)
+
+    assert response.status_code == 200
+    assert "候选审核" in response.text
+    assert "site:" in response.text
 
 
 def test_spa_shell_served_for_ui_routes(

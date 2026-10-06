@@ -71,6 +71,38 @@ class GoogleNewsSearchConfig(BaseModel):
     require_keywords: list[str] = Field(default_factory=list)
 
 
+class MatrixMediaConfig(BaseModel):
+    name: str
+    domains: list[str] = Field(min_length=1)
+    region: str = "CN"
+
+
+class SearchMatrixConfig(BaseModel):
+    """Bounded, rotating identity x event x publisher discovery searches."""
+
+    enabled: bool = False
+    identities: list[str] = Field(default_factory=list)
+    events: list[str] = Field(default_factory=list)
+    event_clues: list[str] = Field(default_factory=list)
+    general_events: list[str] = Field(default_factory=list)
+    media: list[MatrixMediaConfig] = Field(default_factory=list)
+    max_queries_per_run: int = Field(default=6, ge=1, le=30)
+    lookback_days: int = Field(default=3, ge=1, le=7)
+
+
+class HealthReviewConfig(BaseModel):
+    """Extra publication safeguards for the health edition only."""
+
+    enabled: bool = False
+    require_publication_date: bool = True
+    hold_person_events: bool = True
+    contributor_markers: list[str] = Field(default_factory=list)
+    caution_title_phrases: list[str] = Field(default_factory=list)
+    minimum_source_text_chars: int = Field(default=0, ge=0, le=2000)
+    selection_windows_hours: list[int] = Field(default_factory=lambda: [24, 48, 72])
+    target_articles: int = Field(default=3, ge=1, le=20)
+
+
 class HackerNewsConfig(BaseModel):
     """A Hacker News feed fetched via the public Firebase JSON API."""
 
@@ -264,6 +296,8 @@ class AppConfig(BaseModel):
     )
     feeds: list[FeedConfig] = Field(default_factory=list)
     google_news: list[GoogleNewsSearchConfig] = Field(default_factory=list)
+    search_matrix: SearchMatrixConfig = Field(default_factory=SearchMatrixConfig)
+    health_review: HealthReviewConfig = Field(default_factory=HealthReviewConfig)
     youtube_channels: list[YouTubeChannelConfig] = Field(default_factory=list)
     watch_urls: list[WatchUrlConfig] = Field(default_factory=list)
     relevance: RelevanceConfig = Field(default_factory=RelevanceConfig)

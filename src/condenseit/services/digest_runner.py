@@ -46,7 +46,7 @@ def execute_digest(
         else:
             post = pipeline.post_run(skip_deploy=skip_deploy)
 
-        latest = pipeline.store.latest_digest()
+        latest = pipeline.store.latest_digest() if not dry_run else None
         digest_id = latest["id"] if latest else None
         logger.info("Digest run finished (id=%s)", digest_id)
         return {"stats": stats, "post": post, "digest_id": digest_id}

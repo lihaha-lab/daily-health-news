@@ -30,15 +30,18 @@ management of blood pressure, lipids, blood sugar, activity, and warning signs.
 Do not imply that a particular behavior caused someone's illness or that a
 supplement prevents or treats it. Publish fewer items when news is scarce.
 
-## Everyday relevance gate
+## Cardiovascular relevance gate
 
-An item should be included only when it is recent, verifiable, and answers at
-least one of these questions:
-
-- Could it change an ordinary person's everyday health choices or understanding?
-- Does it affect food, exercise, sleep, mental wellbeing, family care, or common
-  consumer health products?
-- Is there a clear, near-term prevention or safety implication for the audience?
+An item is automatically eligible only when its original headline directly
+names a cardiovascular/cerebrovascular condition. Multiple direct topic signals
+only in the source text make it a review lead, not a publishable item. General
+exercise, sleep, or mood coverage is not enough.
+Search terms may be broad for discovery, but discovery is not publication.
+Unknown publication dates and personal death/collapse reports are held for
+review. A cause of death is never inferred from "died of illness", "collapsed",
+"died in the line of duty", or similar language.
+An article hosted by a known newsroom may still be user-contributed content;
+such disclaimers require attribution review before publication.
 
 Normally exclude clinician-only guidelines, drug approvals, hospital operations,
 medical workforce news, technical consultations, early-stage basic research,
@@ -79,6 +82,8 @@ the product, location, affected group, and action exactly as the source states.
 Summaries should fit one short paragraph, avoid repeating the headline or
 takeaways, explain unfamiliar terms simply, and keep personal relevance separate
 from confirmed facts. Never turn a study into a personal action instruction.
+The automated claim check catches some newly invented diagnoses, ages, and
+causal language, but cannot establish that all remaining assertions are true.
 
 ## Prohibited patterns
 

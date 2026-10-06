@@ -17,6 +17,7 @@ from fastapi.responses import (
 
 from condenseit.api_urls import youtube_channel_feed_url
 from condenseit.config import load_config
+from condenseit.pipeline.health_review import matrix_queries
 from condenseit.providers.openrouter_models import pick_cheapest_text_model
 from condenseit.services.ollama_client import (
     ollama_delete,
@@ -817,6 +818,66 @@ def create_admin_router(
     @router.get("/admin/", response_model=None)
     async def admin_home() -> RedirectResponse:
         return RedirectResponse("/admin/sources", status_code=303)
+
+    @router.get("/admin/health-review", response_class=HTMLResponse)
+    async def health_review_page(request: Request) -> HTMLResponse:
+        config = _merged()
+        latest = store.latest_candidate_audit()
+        try:
+            stats = json.loads(latest.get("audit_json") or "{}") if latest else {}
+        except json.JSONDecodeError:
+            stats = {}
+        audit = stats.get("items", []) if isinstance(stats, dict) else []
+        counts = stats.get("counts", {}) if isinstance(stats, dict) else {}
+        reason_labels = {
+            "missing_title_or_original_https_url": "缺少标题或原文链接",
+            "used_in_previous_digest": "前几天的简报已使用",
+            "publication_date_unconfirmed": "发布时间未确认",
+            "publication_date_in_future": "发布时间晚于当前时间",
+            "contributor_content_requires_attribution_review": (
+                "平台用户投稿，需核实作者和来源"
+            ),
+            "event_lead_without_confirmed_diagnosis": "人物事件线索，疾病未确认",
+            "cardiovascular_terms_only_in_body": "仅正文提及心脑血管，标题主题不明确",
+            "not_cardiovascular": "与心脑血管主题不符",
+            "sensational_headline_requires_review": "标题可能夸大，需要人工审阅",
+            "person_event_requires_source_and_cause_review": (
+                "人物事件需核实原始来源与死因"
+            ),
+            "topic_and_source_metadata_present": "通过自动主题和来源信息检查",
+            "insufficient_original_article_text": "原文内容不足，无法自动核验",
+        }
+        audit_rows = [
+            {
+                **item,
+                "status_label": {
+                    "ready": "候选",
+                    "review": "待核验",
+                    "rejected": "排除",
+                }.get(str(item.get("status")), "未知"),
+                "reason_label": reason_labels.get(
+                    str(item.get("reason")), str(item.get("reason") or "")
+                ),
+            }
+            for item in audit
+            if isinstance(item, dict)
+        ] if isinstance(audit, list) else []
+        return templates.TemplateResponse(
+            request,
+            "health_review.html",
+            page_context(
+                request,
+                "Candidate review",
+                "health-review",
+                digests=_digests(),
+                enabled=config.health_review.enabled,
+                latest=latest,
+                audit=audit_rows,
+                counts=counts if isinstance(counts, dict) else {},
+                flow=stats.get("flow", {}) if isinstance(stats, dict) else {},
+                queries=[item.query for item in matrix_queries(config.search_matrix)],
+            ),
+        )
 
     @router.get("/admin/sources", response_class=HTMLResponse)
     async def sources_list(request: Request) -> HTMLResponse:

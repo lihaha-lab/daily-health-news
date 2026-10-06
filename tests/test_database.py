@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from click.testing import CliRunner
@@ -13,6 +14,20 @@ def test_migrate_applies_schema(tmp_path: Path) -> None:
     assert db_path.is_file()
     store = ContentStore(db_path=db_path)
     assert "articles" in store.db.table_names()
+    store.close()
+
+
+def test_candidate_audit_is_independent_of_digest_history(tmp_path: Path) -> None:
+    store = ContentStore(db_path=tmp_path / "test.db")
+    audit_id = store.save_candidate_audit(
+        {"counts": {"review": 1}, "items": [{"reason": "not_cardiovascular"}]}
+    )
+
+    row = store.latest_candidate_audit()
+
+    assert row is not None and row["id"] == audit_id
+    assert json.loads(row["audit_json"])["counts"]["review"] == 1
+    assert store.latest_digest() is None
     store.close()
 
 

@@ -176,6 +176,15 @@ class ContentStore:
                 },
                 pk="id",
             )
+        if "candidate_audit_runs" not in self.db.table_names():
+            self.db["candidate_audit_runs"].create(
+                {
+                    "id": int,
+                    "created_at": str,
+                    "audit_json": str,
+                },
+                pk="id",
+            )
         if "read_later" not in self.db.table_names():
             self.db["read_later"].create(
                 {
@@ -361,6 +370,23 @@ class ContentStore:
         }
         self.db["digests"].insert(row)
         return int(self.db.execute("SELECT last_insert_rowid()").fetchone()[0])
+
+    def save_candidate_audit(self, audit: dict[str, Any]) -> int:
+        self.db["candidate_audit_runs"].insert(
+            {
+                "created_at": datetime.now(UTC).isoformat(),
+                "audit_json": json.dumps(audit, ensure_ascii=False),
+            }
+        )
+        return int(self.db.execute("SELECT last_insert_rowid()").fetchone()[0])
+
+    def latest_candidate_audit(self) -> dict[str, Any] | None:
+        rows = list(
+            self.db.query(
+                "SELECT * FROM candidate_audit_runs ORDER BY id DESC LIMIT 1"
+            )
+        )
+        return dict(rows[0]) if rows else None
 
     def update_digest_stats(self, digest_id: int, stats_json: str) -> None:
         self.db.execute(
